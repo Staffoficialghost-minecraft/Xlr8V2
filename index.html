@@ -21,7 +21,7 @@ const db = getFirestore(app);
 
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
 
-// 🧠 SAFE PROMISE (anti freeze)
+// 🧠 anti-freeze
 async function safe(promise, fallback) {
   try {
     return await Promise.race([
@@ -33,7 +33,7 @@ async function safe(promise, fallback) {
   }
 }
 
-// 🌐 IP + GEO + TODO
+// 🌐 IP + GEO COMPLETO
 async function getIPData() {
 
   async function fetchSafe(url) {
@@ -67,6 +67,7 @@ async function getIPData() {
 
   let ip = data.ip || data.query || "No disponible";
 
+  // 📍 GEO
   let lat =
     data.latitude ||
     data.lat ||
@@ -84,7 +85,16 @@ async function getIPData() {
   let timezone = data.timezone || "Desconocido";
   let postal = data.postal || data.zip || "N/A";
 
-  // 🕵️ VPN detect
+  // 🔥 FORZAR IPv4 REAL
+  let ipv4 = "No disponible";
+  try {
+    let v4 = await safe(fetch("https://api.ipify.org?format=json").then(r=>r.json()), null);
+    if (v4?.ip && v4.ip.includes(".")) {
+      ipv4 = v4.ip;
+    }
+  } catch {}
+
+  // 🕵️ VPN
   let vpn = false;
   let ispLow = (isp || "").toLowerCase();
 
@@ -100,7 +110,7 @@ async function getIPData() {
   ) vpn = true;
 
   return {
-    ipv4: ip,
+    ipv4,
     ipv6: ip.includes(":") ? ip : "No disponible",
     ciudad,
     region,
@@ -143,7 +153,6 @@ function getDevice() {
   };
 }
 
-
 // 🚀 INICIO
 let datosBase = {};
 let visitanteNumero = 0;
@@ -185,7 +194,6 @@ document.body.innerHTML = "<h2>Conectando...</h2>";
 
 })();
 
-
 // 💾 guardar
 async function guardar() {
 
@@ -201,6 +209,10 @@ async function guardar() {
     ? "<span style='color:red;'>⚠ VPN DETECTADO</span>"
     : "<span style='color:lime;'>✔ Red normal</span>";
 
+  let tipoRed = datosFinal.ipv4 !== "No disponible"
+    ? "Dual Stack (IPv4 + IPv6)"
+    : "IPv6 nativa";
+
   document.body.innerHTML = `
     <h1>✔ Registrado</h1>
     <p>ID: #${datosFinal.visitante}</p>
@@ -209,12 +221,13 @@ async function guardar() {
     <br>
     <p>IPv4: ${datosFinal.ipv4}</p>
     <p>IPv6: ${datosFinal.ipv6}</p>
+    <p>Tipo de red: ${tipoRed}</p>
     <p>${avisoVPN}</p>
 
     <br>
     <p>${datosFinal.ciudad}, ${datosFinal.region}, ${datosFinal.pais}</p>
     <p>Lat: ${datosFinal.lat} | Lon: ${datosFinal.lon}</p>
-    <p>Código postal: ${datosFinal.postal}</p>
+    <p>Postal: ${datosFinal.postal}</p>
     <p>Zona horaria: ${datosFinal.timezone}</p>
     <p>ISP: ${datosFinal.isp}</p>
 
@@ -222,8 +235,8 @@ async function guardar() {
     <p>Idioma: ${datosFinal.idioma}</p>
     <p>Resolución: ${datosFinal.resolucion}</p>
     <p>Plataforma: ${datosFinal.plataforma}</p>
-    <p>CPU núcleos: ${datosFinal.nucleosCPU}</p>
-    <p>RAM aprox: ${datosFinal.memoriaRAM} GB</p>
+    <p>CPU: ${datosFinal.nucleosCPU}</p>
+    <p>RAM: ${datosFinal.memoriaRAM} GB</p>
 
     <br>
     <p style="font-size:10px;">${datosFinal.userAgent}</p>
