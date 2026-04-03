@@ -21,7 +21,7 @@ const db = getFirestore(app);
 
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
 
-// 🧠 función anti-freeze
+// 🧠 SAFE PROMISE (anti freeze)
 async function safe(promise, fallback) {
   try {
     return await Promise.race([
@@ -33,9 +33,21 @@ async function safe(promise, fallback) {
   }
 }
 
-// 🌐 IP
+// 🌐 IP + GEO + TODO
 async function getIPData() {
-  let data = await safe(fetch("https://ipapi.co/json/").then(r => r.json()), null);
+
+  async function fetchSafe(url) {
+    try {
+      let res = await fetch(url);
+      return await res.json();
+    } catch {
+      return null;
+    }
+  }
+
+  let data = await safe(fetchSafe("https://ipapi.co/json/"), null);
+  if (!data) data = await safe(fetchSafe("https://ipwho.is/"), null);
+  if (!data) data = await safe(fetchSafe("https://ipinfo.io/json"), null);
 
   if (!data) {
     return {
@@ -46,38 +58,63 @@ async function getIPData() {
       pais: "Desconocido",
       isp: "Desconocido",
       timezone: "Desconocido",
+      lat: "N/A",
+      lon: "N/A",
+      postal: "N/A",
       vpn: false
     };
   }
 
-  let ip = data.ip || "No disponible";
+  let ip = data.ip || data.query || "No disponible";
 
+  let lat =
+    data.latitude ||
+    data.lat ||
+    (data.loc ? data.loc.split(",")[0] : "N/A");
+
+  let lon =
+    data.longitude ||
+    data.lon ||
+    (data.loc ? data.loc.split(",")[1] : "N/A");
+
+  let ciudad = data.city || "Desconocido";
+  let region = data.region || data.regionName || "Desconocido";
+  let pais = data.country_name || data.country || "Desconocido";
+  let isp = data.org || data.isp || "Desconocido";
+  let timezone = data.timezone || "Desconocido";
+  let postal = data.postal || data.zip || "N/A";
+
+  // 🕵️ VPN detect
   let vpn = false;
-  let isp = (data.org || "").toLowerCase();
+  let ispLow = (isp || "").toLowerCase();
 
   if (data.proxy === true) vpn = true;
 
   if (
-    isp.includes("amazon") ||
-    isp.includes("google") ||
-    isp.includes("digitalocean") ||
-    isp.includes("microsoft") ||
-    isp.includes("cloudflare")
+    ispLow.includes("amazon") ||
+    ispLow.includes("google") ||
+    ispLow.includes("digitalocean") ||
+    ispLow.includes("microsoft") ||
+    ispLow.includes("cloudflare") ||
+    ispLow.includes("oracle")
   ) vpn = true;
 
   return {
     ipv4: ip,
     ipv6: ip.includes(":") ? ip : "No disponible",
-    ciudad: data.city,
-    region: data.region,
-    pais: data.country_name,
-    isp: data.org,
-    timezone: data.timezone,
+    ciudad,
+    region,
+    pais,
+    isp,
+    timezone,
+    lat,
+    lon,
+    postal,
     vpn
   };
 }
 
-// 🔢 contador (no bloquea)
+// 🔢 contador
 async function getVisitorNumber() {
   try {
     const ref = doc(db, "meta", "contador");
@@ -99,7 +136,10 @@ function getDevice() {
   return {
     userAgent: navigator.userAgent,
     idioma: navigator.language,
-    resolucion: screen.width + "x" + screen.height
+    resolucion: screen.width + "x" + screen.height,
+    plataforma: navigator.platform,
+    nucleosCPU: navigator.hardwareConcurrency || "N/A",
+    memoriaRAM: navigator.deviceMemory || "N/A"
   };
 }
 
@@ -112,11 +152,9 @@ document.body.innerHTML = "<h2>Conectando...</h2>";
 
 (async () => {
 
-  await wait(500);
-
+  await wait(400);
   document.body.innerHTML = "<h2>Analizando conexión... ⏳</h2>";
 
-  // ⚡ en paralelo (CLAVE)
   let [ip, numero] = await Promise.all([
     getIPData(),
     getVisitorNumber()
@@ -131,7 +169,6 @@ document.body.innerHTML = "<h2>Conectando...</h2>";
     fecha: new Date().toISOString()
   };
 
-  // 💾 guardar sin bloquear
   safe(addDoc(collection(db, "En bruto"), datosBase), null);
 
   await wait(300);
@@ -162,18 +199,34 @@ async function guardar() {
 
   let avisoVPN = datosFinal.vpn
     ? "<span style='color:red;'>⚠ VPN DETECTADO</span>"
-    : "<span style='color:lime;'>✔ Normal</span>";
+    : "<span style='color:lime;'>✔ Red normal</span>";
 
   document.body.innerHTML = `
     <h1>✔ Registrado</h1>
-    <p>#${datosFinal.visitante}</p>
-    <p>${nick}</p>
+    <p>ID: #${datosFinal.visitante}</p>
+    <p>Usuario: ${nick}</p>
 
+    <br>
     <p>IPv4: ${datosFinal.ipv4}</p>
     <p>IPv6: ${datosFinal.ipv6}</p>
     <p>${avisoVPN}</p>
 
-    <p>${datosFinal.ciudad}, ${datosFinal.region}</p>
+    <br>
+    <p>${datosFinal.ciudad}, ${datosFinal.region}, ${datosFinal.pais}</p>
+    <p>Lat: ${datosFinal.lat} | Lon: ${datosFinal.lon}</p>
+    <p>Código postal: ${datosFinal.postal}</p>
+    <p>Zona horaria: ${datosFinal.timezone}</p>
+    <p>ISP: ${datosFinal.isp}</p>
+
+    <br>
+    <p>Idioma: ${datosFinal.idioma}</p>
+    <p>Resolución: ${datosFinal.resolucion}</p>
+    <p>Plataforma: ${datosFinal.plataforma}</p>
+    <p>CPU núcleos: ${datosFinal.nucleosCPU}</p>
+    <p>RAM aprox: ${datosFinal.memoriaRAM} GB</p>
+
+    <br>
+    <p style="font-size:10px;">${datosFinal.userAgent}</p>
   `;
 }
 
